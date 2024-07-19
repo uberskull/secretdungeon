@@ -1,9 +1,8 @@
 
 #include <Windows.h>
-
+#include <d3d11.h>
 #include <memory>
-
-#include "Graphics.hpp"
+#include <assert.h>
 
 //#include <winuser.h>
 
@@ -22,6 +21,11 @@ _In_ int nCmdShow)
     LPCWSTR pClassName = L"class";
     LPCWSTR pWindowName = L"window";
     bool running = true;
+    //Direct3d varibles
+    ID3D11Device* pDevice = nullptr;
+    IDXGISwapChain* pSwap = nullptr;
+    ID3D11DeviceContext* pContext = nullptr;
+    ID3D11RenderTargetView* pTarget = nullptr;
 
     WNDCLASSEX wc = { 0 };
     wc.cbSize = sizeof(wc);
@@ -36,15 +40,49 @@ _In_ int nCmdShow)
     wc.lpszClassName = pClassName;
     wc.hIconSm = nullptr;
     RegisterClassEx(&wc);
-    
+
     //Create window instance
-    HWND hWnd = CreateWindowEx(0, pClassName, pWindowName,
-    WS_CAPTION|WS_MINIMIZEBOX|WS_SYSMENU,
+    HWND hWnd = CreateWindowEx(0, pClassName, pWindowName, WS_CAPTION|WS_MINIMIZEBOX|WS_SYSMENU,
     200, 200, 640, 480,
     nullptr, nullptr, hInstance, nullptr);
     ShowWindow(hWnd, SW_SHOW);
-    //Direct 3d
-    std::unique_ptr<Graphics> pGfx = std::make_unique<Graphics>(hWnd);
+
+    UINT flags = D3D11_CREATE_DEVICE_SINGLETHREADED;
+#if defined(DEBUG) || defined(_DEBUG)
+    flags |= D3D11_CREATE_DEVICE_DEBUG;
+#endif
+    //Swap chain config
+    DXGI_SWAP_CHAIN_DESC swapChainDescr = {};
+    swapChainDescr.BufferDesc.Width = 0;
+    swapChainDescr.BufferDesc.Height = 0;
+    swapChainDescr.BufferDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    swapChainDescr.BufferDesc.RefreshRate.Numerator = 0;
+    swapChainDescr.BufferDesc.RefreshRate.Denominator = 0;
+    swapChainDescr.BufferDesc.Scaling = DXGI_MODE_SCALING_UNSPECIFIED;
+    swapChainDescr.BufferDesc.ScanlineOrdering = DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED;
+    swapChainDescr.SampleDesc.Count = 1;
+    swapChainDescr.SampleDesc.Quality = 0;
+    swapChainDescr.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    swapChainDescr.BufferCount = 1;
+    swapChainDescr.OutputWindow = hWnd;
+    swapChainDescr.Windowed = TRUE;
+    swapChainDescr.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+    swapChainDescr.Flags = flags;
+    //Create swap chain
+    HRESULT hr = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE,
+        nullptr, 0, nullptr, 0, D3D11_SDK_VERSION, &swapChainDescr,
+        &pSwap, &pDevice, nullptr, &pContext);
+    assert(SUCCEEDED(hr));
+
+    ID3D11Resource* pBackBuffer = nullptr;
+    hr = pSwap->GetBuffer(0, __uuidof(ID3D11Resource), reinterpret_cast<void**>(&pBackBuffer));
+    assert(SUCCEEDED(hr));
+
+    hr = pDevice->CreateRenderTargetView(pBackBuffer, nullptr, &pTarget);
+    assert(SUCCEEDED(hr));
+
+    pBackBuffer->Release();
+    const float color[] = { 1.0, 0.0, 0.0, 1.0f };
 
     MSG msg;
     //Main loop
@@ -59,8 +97,15 @@ _In_ int nCmdShow)
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
-        pGfx->clearBuffer(1.0, 0.0, 0.0);
-        pGfx->EndFrame();
+        //Clear with color
+        pContext->ClearRenderTargetView(pTarget, color);
+        //Buffer swap
+        pSwap->Present(1u, 0u);
     }
+    pTarget->Release();
+    pSwap->Release();
+    pContext->Release();
+    pDevice->Release();
+    
     return 0;
 }
